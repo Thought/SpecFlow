@@ -396,12 +396,48 @@ namespace TechTalk.SpecFlow.Infrastructure
 
         private object[] GetExecuteArguments(BindingMatch match)
         {
-            if (match.Arguments.Length != match.StepBinding.ParameterTypes.Length)
-                throw errorProvider.GetParameterCountError(match, match.Arguments.Length);
+			// The number of arguments to NOT compress to string[].
+			// We do it this way because it's easier to code to.
+			// Defaults to "don't compress any".
+			int? dontCompress = null;
+			if (match.Arguments.Length != match.StepBinding.ParameterTypes.Length)
+			{
+				// Allow for the last parameter to be string[], and collect
+				//   all of the following group matches.
+				if (match.Arguments.Length > match.StepBinding.ParameterTypes.Length &&
+					match.StepBinding.ParameterTypes.Length > 0)
+				{
+					var lastParameter = match.StepBinding.ParameterTypes[match.StepBinding.ParameterTypes.Length - 1];
+					if (lastParameter.IsArray && lastParameter.Name == "String")
+					{
+						// Compress the last N args into a string[],
+						//   starting with the last real parameter.
+						dontCompress = match.StepBinding.ParameterTypes.Length - 1;
+					}
+				}
 
-            var arguments = match.Arguments.Select(
-                (arg, argIndex) => ConvertArg(arg, match.StepBinding.ParameterTypes[argIndex]))
-                .ToArray();
+				if (dontCompress == null)
+					throw errorProvider.GetParameterCountError(match, match.Arguments.Length);
+			}
+			// Set the default to "last arg index + 1" (for "compress none").
+			if (dontCompress == null)
+				dontCompress = match.Arguments.Length;
+
+        	var arguments = match.Arguments.Select(
+        		(arg, argIndex) => ConvertArg(arg,
+        			argIndex < dontCompress
+						// Not compressing.
+						? match.StepBinding.ParameterTypes[argIndex]
+						// Compressing.
+						: typeof (string)))
+        		.ToArray();
+			if (dontCompress < arguments.Length)
+			{
+				// Build the last arg as a string[].
+				var lastArg = arguments.Skip((int)dontCompress).Cast<string>().ToArray();
+				// Replace the last N args with the string[].
+				arguments = arguments.Take((int)dontCompress).Concat(new [] { lastArg }).ToArray();
+			}
 
             return arguments;
         }
